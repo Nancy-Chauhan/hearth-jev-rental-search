@@ -29,7 +29,8 @@ what it found.
  When the video is in place, delete the placeholder line below it.
 -->
 
-**Demo video: space reserved.**
+https://github.com/user-attachments/assets/ba58c178-1367-4e83-b77f-0f0476652ff1
+
 
 A full search at its original speed: one request, four marketplaces, one shortlist.
 
