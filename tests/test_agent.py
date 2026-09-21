@@ -96,6 +96,32 @@ def test_all_heads_are_one_request_and_only_matching_head_executes(monkeypatch):
     assert set(calls[0]["questions"]) == {"operation", "click_target", "type_text_target"}
 
 
+def test_supplied_text_is_selected_by_jev_in_the_same_request(monkeypatch):
+    calls = []
+    text_values = {
+        "location": {"value": "San Francisco, CA", "description": "Requested city"},
+        "minimum_price": {"value": "2000", "description": "Minimum monthly rent"},
+    }
+
+    def post(_url, _key, body):
+        calls.append(body)
+        return {
+            "model": "test",
+            "answers": {
+                "operation": choice(body["questions"]["operation"]["criteria"], "TYPE_TEXT"),
+                "type_text_target": choice(["1"], "1"),
+                "type_text_value_1": choice([*text_values, "none"], "location"),
+            },
+        }
+
+    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setattr(model, "post_json", post)
+    d = model.choose(page(), "Find a flat", [], text_values)
+    assert len(calls) == 1
+    assert d["text"] == "San Francisco, CA"
+    assert "type_text_value_1" in calls[0]["questions"]
+
+
 def test_click_cannot_consume_a_text_target(monkeypatch):
     def post(_url, _key, body):
         return {
@@ -199,6 +225,23 @@ def test_generated_text_reused_only_for_identical_retry_context(runner, monkeypa
     assert runner.pending_text is None
 
 
+def test_supplied_text_skips_the_generation_helper(runner, monkeypatch):
+    helper = Mock(side_effect=AssertionError("generation helper must not run"))
+    monkeypatch.setattr(loop, "field_text", helper)
+    runner.state["decision"] = {
+        **decision(),
+        "text": "San Francisco, CA",
+        "model": "jev-test",
+    }
+    runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    helper.assert_not_called()
+    runner.state["browser"].act.assert_called_once_with(
+        runner.state["page"]["actions"][0],
+        runner.state["page"],
+        text="San Francisco, CA",
+    )
+
+
 def test_changed_field_context_does_not_reuse_generated_text(runner, monkeypatch):
     helper = Mock(return_value=("book", {"model": "test", "latency_ms": 10}))
     monkeypatch.setattr(loop, "field_text", helper)
@@ -216,6 +259,14 @@ def test_loading_waits_do_not_trigger_no_progress_stop(runner):
         runner.state["decision"] = decision("wait")
         runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
     assert len(runner.state["history"]) == 5 and runner.state["status"] == "ready"
+
+
+def test_repeated_click_on_same_url_stops_oscillation(runner):
+    runner.state["browser"].observe.return_value = page()
+    for _ in range(3):
+        runner.state["decision"] = {**decision("e3"), "operation": "CLICK"}
+        runner.command("act", {"fingerprint": runner.state["page"]["fingerprint"]})
+    assert runner.state["status"] == "blocked"
 
 
 def test_stale_observation_preserves_executed_action(runner):
@@ -312,9 +363,72 @@ def test_text_helper_rejects_invalid_values(monkeypatch, content):
         model.field_text({"goal": "Find a flight"})
 
 
+def test_a_field_with_no_supplied_value_stops_as_partial_not_failed(runner, monkeypatch):
+    """Jev choosing a field nothing belongs in is an outcome, not a broken source."""
+
+    def explode(*_args, **_kwargs):
+        raise loop.NoTextValue("no supplied value belongs in that field")
+
+    monkeypatch.setattr(loop, "choose", explode)
+    runner.state["status"] = "ready"
+    snapshot = runner.command("predict")
+    assert runner.state["status"] == "blocked"
+    assert snapshot["status"] == "blocked"
+    assert runner.state["decision"] is None
+    assert "no supplied value" in runner.state["stop_reason"]
+
+
 def test_navigation_during_prediction_reobserves_without_action(runner):
     runner.state["browser"].fresh.side_effect = StalePage("Document navigating")
     runner.command("tick")
     assert runner.state["status"] == "ready"
     assert runner.state["decision"] is None
     runner.state["browser"].act.assert_not_called()
+
+
+def test_tick_preserves_blocked_prediction(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", Mock(side_effect=loop.NoTextValue("No matching value")))
+    result = runner.command("tick")
+    assert result["status"] == "blocked"
+    assert result["stop_reason"] == "No matching value"
+    runner.state["browser"].act.assert_not_called()
+
+
+def test_persistent_navigation_stops_even_when_recovery_observation_is_stale(runner):
+    runner.state["browser"].fresh.side_effect = StalePage("Document navigating")
+    runner.state["browser"].observe.side_effect = StalePage("Still navigating")
+    states = list(runner.run())
+    assert len(states) == loop.MAX_STALE_RETRIES
+    assert states[-1]["status"] == "blocked"
+    assert "kept changing" in states[-1]["stop_reason"]
+    runner.state["browser"].act.assert_not_called()
+
+
+def test_successful_tick_resets_consecutive_stale_count(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", Mock(return_value=decision("wait")))
+    runner.state["stale_retries"] = loop.MAX_STALE_RETRIES - 1
+    runner.command("tick")
+    assert runner.state["stale_retries"] == 0
+    assert runner.state["status"] == "ready"
+
+
+@pytest.mark.parametrize("budget", ["decisions", "history"])
+def test_tick_budget_exhaustion_returns_a_terminal_state(runner, monkeypatch, budget):
+    choose = Mock(return_value=decision("wait"))
+    monkeypatch.setattr(loop, "choose", choose)
+    runner.state[budget] = [{}] * (loop.MAX_STEPS * (2 if budget == "decisions" else 1))
+    result = runner.command("tick")
+    assert result["status"] == "blocked"
+    assert "budget" in result["stop_reason"]
+    runner.state["browser"].act.assert_not_called()
+    calls = choose.call_count
+    runner.command("tick")
+    assert choose.call_count == calls
+
+
+def test_stale_recovery_does_not_replay_executed_mutation(runner, monkeypatch):
+    monkeypatch.setattr(loop, "choose", Mock(return_value=decision("e3")))
+    runner.state["browser"].observe.side_effect = StalePage("Document navigating")
+    runner.command("tick")
+    assert len(runner.state["history"]) == 1
+    runner.state["browser"].act.assert_called_once()

@@ -12,6 +12,14 @@ from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 CLIENT = httpx.Client(http2=True, timeout=25)
 
 
+class NoTextValue(ValueError):
+    """Jev picked a text field but had no supplied value that belongs in it.
+
+    That is a legitimate model outcome, not a failure: the source should stop as
+    "partial" rather than be reported as broken.
+    """
+
+
 def post_json(url, key, body):
     for attempt in range(3):
         try:
@@ -78,11 +86,19 @@ def action_space(actions):
     return elements, targets, controls
 
 
-def choose(state, goal, history):
+def choose(state, goal, history, text_values=None):
+    key = os.environ.get("TYPESAFE_API_KEY")
+    if not key:
+        raise ValueError("TYPESAFE_API_KEY is missing; add it to .env and restart Hearth.")
     elements, targets, controls = action_space(state["actions"])
+    text_values = text_values or {}
     labels = {
         "CLICK": "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
-        "TYPE_TEXT": "Enter or replace text in an editable field. A small LLM will supply the value from the goal.",
+        "TYPE_TEXT": (
+            "Enter or replace text in an editable field using an exact user-provided value."
+            if text_values
+            else "Enter or replace text in an editable field. A small LLM will supply the value from the goal."
+        ),
         "SELECT": "Select an observed dropdown value.",
     }
     operations = {key: labels[key] for key in targets}
@@ -104,6 +120,28 @@ def choose(state, goal, history):
             },
             "instructions": {"goal": goal, "operation": operation, "rules": [NEXT_ACTION, TARGET]},
         }
+    if text_values:
+        value_criteria = {
+            name: {"exact_value": item["value"], "meaning": item["description"]}
+            for name, item in text_values.items()
+        } | {"none": "None of the supplied values belongs in this field."}
+        for index, action in targets.get("TYPE_TEXT", {}).items():
+            questions[f"type_text_value_{index}"] = {
+                "type": "choice",
+                "criteria": value_criteria,
+                "instructions": {
+                    "goal": goal,
+                    "field": {
+                        "label": action["label"],
+                        "role": action.get("role", ""),
+                        "current_value": action.get("value", ""),
+                    },
+                    "question": (
+                        "If TYPE_TEXT is used on this exact field, which supplied value belongs here? "
+                        "Select none rather than putting a value into an unrelated field."
+                    ),
+                },
+            }
     body = {
         "model": os.environ.get("TYPESAFE_MODEL", "jev-latest"),
         "state": {
@@ -116,11 +154,13 @@ def choose(state, goal, history):
         "questions": questions,
     }
     started = time.perf_counter()
-    result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
+    result = post_json("https://api.typesafe.ai/v1/systemone", key, body)
     operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None
     target_answer = None
+    selected_text = None
+    text_value_answer = None
     probabilities = {}
     if operation in targets:
         # Unused target heads cannot cause an action. Validate the head selected by the operation.
@@ -128,6 +168,13 @@ def choose(state, goal, history):
         target = target_answer["choice"]
         choice = targets[operation][target]["id"]
         probabilities = {a["id"]: target_answer["probabilities"][index] for index, a in targets[operation].items()}
+        if operation == "TYPE_TEXT" and text_values:
+            value_options = {*text_values, "none"}
+            text_value_answer = validate_choice(result["answers"].get(f"type_text_value_{target}", {}), value_options)
+            value_name = text_value_answer["choice"]
+            if value_name == "none":
+                raise NoTextValue("Jev found no supplied value for the selected text field; no text was entered.")
+            selected_text = text_values[value_name]["value"]
     else:
         choice = controls[operation]["id"] if operation in controls else operation
         probabilities[choice] = operation_answer["probabilities"][operation]
@@ -140,6 +187,8 @@ def choose(state, goal, history):
         "operation_probabilities": operation_answer["probabilities"],
         "target_probabilities": target_answer["probabilities"] if target_answer else {},
         "target_confidence": target_answer["confidence"] if target_answer else None,
+        "text": selected_text,
+        "text_value_answer": text_value_answer,
         "raw_answers": result["answers"],
         "model": result["model"],
         "usage": result.get("usage", {}),

@@ -3,6 +3,7 @@
 import atexit
 import json
 import os
+import re
 import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -10,14 +11,47 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .agent import Agent
+from .browser import StalePage
 from .questions import MAX_STEPS
+
+STATIC_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+STATIC_MIME = {
+    ".html": "text/html",
+    ".js": "text/javascript",
+    ".css": "text/css",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".ico": "image/x-icon",
+    ".json": "application/json",
+}
 
 ROOT = Path(__file__).parent
 PORT = int(os.environ.get("TYPESAFE_DEMO_PORT", "8766"))
+HOST = (os.environ.get("TYPESAFE_DEMO_HOST") or "127.0.0.1").strip() or "127.0.0.1"
+WILDCARD = HOST in {"0.0.0.0", "::"}
 ORIGIN = f"http://127.0.0.1:{PORT}"
 TOKEN = secrets.token_urlsafe(32)
 LOCK = threading.Lock()
 AGENT = None
+
+
+def host_allowed(header):
+    """Only the configured interface answers. A wildcard bind accepts any host on its port."""
+    if not header:
+        return False
+    if WILDCARD:
+        return header.endswith(f":{PORT}")
+    return header in {f"{HOST}:{PORT}", f"127.0.0.1:{PORT}", f"localhost:{PORT}", f"[::1]:{PORT}"}
+
+
+def origin_allowed(origin, request_host):
+    """Same-origin, or a non-browser client that sends no Origin. Cross-site pages are refused."""
+    if origin is None:
+        return True
+    return origin in {f"http://{request_host}", f"https://{request_host}"}
 
 
 def load_environment():
@@ -29,9 +63,37 @@ def load_environment():
                 os.environ.setdefault(key, value)
 
 
+DEFAULT_PRICE_PER_BTOK = 42.0
+
+
+def reported_price(name, default=None):
+    """Operator-configured token rate. Never guessed by the app."""
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if value >= 0 else default
+
+
 def response_state():
     state = AGENT.snapshot() if AGENT else {"page": None, "status": "idle", "history": [], "decision": None}
-    return {**state, "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"), "max_steps": MAX_STEPS}
+    return {
+        **state,
+        "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"),
+        "max_steps": MAX_STEPS,
+        "configuration": {
+            "typesafe": bool(os.environ.get("TYPESAFE_API_KEY")),
+            "text_model": bool(os.environ.get("TEXT_MODEL_API_KEY")),
+        },
+        "pricing": {
+            "per_btok": reported_price("TYPESAFE_PRICE_PER_BTOK", DEFAULT_PRICE_PER_BTOK),
+            "input_per_mtok": reported_price("TYPESAFE_PRICE_INPUT_PER_MTOK"),
+            "output_per_mtok": reported_price("TYPESAFE_PRICE_OUTPUT_PER_MTOK"),
+        },
+    }
 
 
 def close_browser():
@@ -44,26 +106,58 @@ def close_browser():
 def command(name, body):
     global AGENT
     if name == "reset":
-        scenario = body.get("scenario", "flights")
-        if scenario not in {"travel", "research", "flights"}:
+        text_values = body.get("text_values") or {}
+        if not isinstance(text_values, dict) or len(text_values) > 16:
+            raise ValueError("Invalid supplied text values")
+        for name, item in text_values.items():
+            if (
+                not isinstance(name, str)
+                or not name.replace("_", "").isalnum()
+                or not isinstance(item, dict)
+                or not isinstance(item.get("value"), str)
+                or not 0 < len(item["value"]) <= 2000
+                or not isinstance(item.get("description"), str)
+                or not 0 < len(item["description"]) <= 500
+            ):
+                raise ValueError("Invalid supplied text value")
+        required_keys = ["TYPESAFE_API_KEY"] + ([] if text_values else ["TEXT_MODEL_API_KEY"])
+        missing = [name for name in required_keys if not os.environ.get(name)]
+        if missing:
+            raise ValueError(f"Add {', '.join(missing)} to .env, then restart Hearth.")
+        scenario = body.get("scenario", "craigslist")
+        if scenario not in {"travel", "research", "flights", "marketplace", "craigslist", "redfin", "zillow"}:
             raise ValueError("Unknown demo scenario")
         goal = body.get("goal", "").strip()
         if not goal or len(goal) > 2000:
             raise ValueError("Enter 1–2,000 characters")
         close_browser()
+        real_urls = {
+            "flights": "https://www.google.com/travel/flights?hl=en",
+            "marketplace": "https://www.facebook.com/marketplace/category/propertyrentals/",
+            "craigslist": (
+                "https://www.craigslist.org/search/city/san-francisco-ca"
+                "?cat=apa&lat=37.7429&lon=-122.433&radius=4.8#search=2~gallery~6"
+            ),
+            "redfin": "https://www.redfin.com/city/17151/CA/San-Francisco/apartments-for-rent",
+            "zillow": "https://www.zillow.com/san-francisco-ca/rentals/",
+        }
         AGENT = Agent(
-            "https://www.google.com/travel/flights?hl=en"
-            if scenario == "flights"
-            else f"{ORIGIN}/fixture.html?scenario={scenario}",
+            real_urls.get(scenario, f"{ORIGIN}/fixture.html?scenario={scenario}"),
             goal,
             screenshots=True,
             record_dir=Path.cwd() / "artifacts" / "frames" if body.get("record") else None,
+            text_values=text_values,
         )
         AGENT.state["scenario"] = scenario
     else:
         if AGENT is None:
             raise ValueError("Start a demo first")
-        AGENT.command(name, body)
+        try:
+            AGENT.command(name, body)
+        except StalePage:
+            if name != "act":
+                raise
+            AGENT.command("refresh")
     return response_state()
 
 
@@ -79,7 +173,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(content)
 
     def do_GET(self):
-        if self.headers.get("Host") != f"127.0.0.1:{PORT}":
+        if not host_allowed(self.headers.get("Host")):
             return self.send(403, "Forbidden", "text/plain")
         path = urlparse(self.path).path
         if path == "/api/state":
@@ -89,23 +183,34 @@ class Handler(BaseHTTPRequestHandler):
             video = ROOT.parent / "docs" / "demo.mp4"
             if video.exists():
                 return self.send(200, video.read_bytes(), "video/mp4")
+        # Text files that embed the per-run demo token.
         files = {
             "/": ("index.html", "text/html"),
+            "/index.html": ("index.html", "text/html"),
             "/app.js": ("app.js", "text/javascript"),
+            "/report.js": ("report.js", "text/javascript"),
+            "/query.js": ("query.js", "text/javascript"),
+            "/telemetry.js": ("telemetry.js", "text/javascript"),
             "/style.css": ("style.css", "text/css"),
             "/fixture.html": ("fixture.html", "text/html"),
         }
-        if path not in files:
+        if path in files:
+            name, mime = files[path]
+            content = (ROOT / "static" / name).read_text().replace("__TOKEN__", TOKEN)
+            return self.send(200, content, mime + "; charset=utf-8")
+        # Anything else in static/ is served verbatim, so adding a module cannot 404 here.
+        name = path.lstrip("/")
+        target = ROOT / "static" / name
+        if not STATIC_NAME.fullmatch(name) or not target.is_file():
             return self.send(404, "Not found", "text/plain")
-        name, mime = files[path]
-        content = (ROOT / "static" / name).read_text().replace("__TOKEN__", TOKEN)
-        self.send(200, content, mime + "; charset=utf-8")
+        self.send(200, target.read_bytes(), STATIC_MIME.get(target.suffix, "application/octet-stream"))
 
     def do_POST(self):
+        host = self.headers.get("Host")
         if (
-            self.headers.get("Host") != f"127.0.0.1:{PORT}"
+            not host_allowed(host)
             or self.headers.get("X-Demo-Token") != TOKEN
-            or self.headers.get("Origin") not in (None, ORIGIN)
+            or not origin_allowed(self.headers.get("Origin"), host)
         ):
             return self.send(403, json.dumps({"error": "Local demo requests only"}))
         if not LOCK.acquire(blocking=False):
@@ -131,8 +236,16 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     load_environment()
     atexit.register(close_browser)
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"Jev Ultrafast: {ORIGIN}", flush=True)
+    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    print(f"Jev Ultrafast: http://{HOST}:{PORT}", flush=True)
+    if not WILDCARD and HOST in {"127.0.0.1", "localhost"}:
+        print("Bound to loopback only. Set TYPESAFE_DEMO_HOST=0.0.0.0 to reach it from another device.", flush=True)
+    else:
+        print(
+            "WARNING: bound beyond loopback. Anyone who can reach this port can drive the Chrome profile "
+            "it controls, and the demo token is readable from GET /. Use a trusted network only.",
+            flush=True,
+        )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

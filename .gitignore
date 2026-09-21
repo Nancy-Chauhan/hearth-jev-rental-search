@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .venv/
 __pycache__/
 .pytest_cache/
@@ -8,3 +10,13 @@ artifacts/
 *.egg-info/
 
 dist/
+
+# Local agent tooling and scratch output: not part of the project.
+.commandcode/
+skills-lock.json
+output/
+
+# Never commit a cookie export. Load one from outside the repo with
+# `uv run python scripts/load_cookies.py <path>`.
+cookies*.json
+*.cookies.json

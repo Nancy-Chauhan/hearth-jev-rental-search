@@ -1,36 +1,242 @@
-<img src="docs/banner.svg" alt="Jev Ultrafast · Browser Use × TypeSafe" width="100%" />
+# Hearth: watch an AI agent search four rental marketplaces
 
-# Jev Ultrafast ⚡
+Hearth is a small local web app that drives a **real Chrome browser** to search Craigslist, Facebook
+Marketplace, Redfin and Zillow for a rental, and folds what it finds into one shortlist. You give it a
+single request in plain language; it decides every click itself, and it shows you each decision as it
+happens.
 
-> [!IMPORTANT]
-> **The Browser Use Cloud waitlist is open.** Get early access to ultrafast browser agents in the cloud.
-> **[Join the waitlist →](https://browser-use.com/ultrafast?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)**
+Nothing is simulated. The panel on the right is a live view of the tab the agent is driving, the actions
+are real clicks and keystrokes, and the spend counter is real model usage.
 
-**A browser agent with a dynamic, indexed action space.**
+<img src="jev_ultrafast/static/backdrop.jpg" alt="Illustrated San Francisco street of painted rowhouses stepping down toward the bay" width="100%" />
 
-Give it one goal. [TypeSafe's Jev](https://docs.typesafe.ai/introduction) picks an operation and an element. A small LLM writes text only when the operation is `TYPE_TEXT`.
+*San Francisco, illustrated. The same artwork that sits behind the Hearth app, and the city its default
+search is set to.*
 
-**Zürich → London on Google Flights in 7.1 seconds.** One natural-language goal, actual text generation, and loading waits included.
+**Hearth will never message a seller, save a listing, or start a transaction.** It reads pages and reports
+what it found.
 
-<a href="docs/demo.mp4"><img src="docs/demo.gif" alt="A real Google Flights search at 1× speed, with generated city names and dynamic operation/target decisions" width="100%" /></a>
+## ▶ Watch it work
 
-[Watch the MP4](docs/demo.mp4) · [Measurements](docs/performance.md) · [Read the loop](jev_ultrafast/agent.py)
+<!--
+ VIDEO SLOT: paste the demo recording here.
 
-## The action space
+ Drag hearth.mp4 into this spot in the GitHub README editor. GitHub uploads it and inserts a
+ user-attachments URL, which renders as an inline player. Leave that URL alone on its own line, e.g.:
 
-Every observation produces a new element table:
+     https://github.com/user-attachments/assets/00000000-0000-0000-0000-000000000000
 
-```text
-[1] button    Change ticket type · Round trip
-[2] combobox  Where from?        · San Francisco
-[3] combobox  Where to?          · empty
-[4] textbox   Departure          · empty
-...
+ When the video is in place, delete the placeholder line below it.
+-->
+
+**Demo video: space reserved.**
+
+A full search at its original speed: one request, four marketplaces, one shortlist.
+
+## Before you start
+
+| You need | Why | Notes |
+| --- | --- | --- |
+| **[uv](https://docs.astral.sh/uv/)** | Installs Python and every dependency | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| **Python 3.12+** | The agent | `uv` will fetch it for you |
+| **Google Chrome** | The agent drives Chrome, and voice search uses Chrome's speech API | Brave and embedded Chromium do **not** expose the Web Speech API |
+| **A TypeSafe API key** | Jev chooses each operation and target | <https://typesafe.ai>. Paid, but a search costs a fraction of a cent (see [Configuration](#configuration)) |
+
+You do **not** need a text-model key for the rental workflow: the sidebar supplies the exact field values,
+and Jev picks among those inside the same request.
+
+## Setup
+
+### 1. Get the code and install
+
+```bash
+git clone https://github.com/Nancy-Chauhan/hearth-jev-rental-search.git
+cd hearth-jev-rental-search
+uv sync
 ```
 
-The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered.
+### 2. Add your key
 
-```text
+```bash
+cp .env.example .env
+```
+
+Open `.env` and set `TYPESAFE_API_KEY`. Everything else in that file is optional and is documented in
+[Configuration](#configuration).
+
+### 3. Start a Chrome that the agent may drive
+
+Use a **dedicated profile**, not your everyday one: the agent types and clicks in this browser.
+
+```bash
+# macOS
+profile=$(mktemp -d /tmp/hearth-chrome.XXXXXX)
+open -na 'Google Chrome' --args \
+  --remote-debugging-port=9222 \
+  --user-data-dir="$profile" \
+  --no-first-run --no-default-browser-check about:blank
+
+# Linux
+google-chrome --remote-debugging-port=9222 \
+  --user-data-dir=/tmp/hearth-chrome \
+  --no-first-run --no-default-browser-check about:blank
+```
+
+### 4. Run Hearth
+
+```bash
+BU_CDP_URL=http://127.0.0.1:9222 uv run jev
+```
+
+### 5. Open it
+
+Open **<http://127.0.0.1:8766>** in your normal Chrome. The header should say **Jev ready**. If it says
+*Setup needed*, the key in `.env` was not picked up. Restart the server after editing it.
+
+> **Which Chrome is which?** Two are involved. The one from step 3 is the browser the agent drives. The one
+> you open in step 5 only displays Hearth and the frames the agent sends back.
+
+## Using Hearth
+
+### 1. Describe the search, or set the filters by hand
+
+Two ways in, and they write to the same place:
+
+- **The request bar** takes a whole request, typed or spoken, and parses it into the sidebar filters before
+  the search starts:
+  `studio in Oakland under $2,500, near BART` → **Where** `Oakland`, **budget** `$2,000-$2,500`,
+  **home type** `Studio`, and `near BART` kept as the free-text preference.
+  It understands upper bounds, lower bounds, ranges (`between 1500 and 2500`, `2000-3000`), `$`, `k`, and
+  spoken numbers (`twenty five hundred`). A line under the bar tells you what it applied.
+- **The sidebar** sets the same four things directly: **Where**, **Monthly budget**, **Home type**
+  (Apartment / Studio / House) and **Listed within**. Pick which marketplaces to search in **Search
+  everywhere**.
+
+Whatever you do not override stays as-is. The request bar only ever fills fields from what you actually
+said. It will not invent a budget, and `1200 sqft` or `near BART` are never mistaken for a price or a city.
+
+**Voice:** press **Speak**, describe the home, then stop talking. It keeps listening through pauses and
+starts the search after about 1.8 seconds of silence, or immediately if you press **Speak** again. Chrome
+may ask for microphone permission the first time.
+
+### 2. Start the search
+
+Press **Start searching**. Hearth opens one tab per source in the Chrome from setup step 3 and works
+through them in order.
+
+### 3. Watch the run
+
+- The **browser panel** shows the live tab, with the address bar and a frame timer that tells you how fresh
+  the picture is (`LAST FRAME · 3s` means the frame is three seconds old).
+- The **activity rail** lists what happened, newest first: one card per action with its cost, its duration,
+  the model that decided it, and whether the page actually changed.
+- The **counters** across the top are cumulative for the whole search: pages visited, browser actions,
+  elapsed wall time, and estimated AI spend.
+- The **source tabs** show each marketplace's state: `Finished`, `Partial`, or a wall such as `Bot check`.
+- **Stop** is always available and stops after the request in flight.
+
+### 4. Read the results
+
+When sources finish, Hearth shows:
+
+- **A first-match card** as soon as one candidate passes every check.
+- **Your shortlist:** the best few candidates, each with photo, rent, facts, and a numbered badge.
+- **The match report:** up to 18 cards from every source, interleaved so no single marketplace takes over
+  the list, each one labelled with *why* it is there and which checks it passed.
+
+Every card is labelled honestly. A tick means the listing's own text proves that check; a question mark
+means the source did not state it, so `? City unconfirmed` is not a pass, and a candidate is not a verified
+home. Missing facts read `not provided` rather than pretending to be zero. **Confirm availability on the
+original listing**; Hearth only reports what it observed.
+
+### 5. Developer mode
+
+The **Developer** toggle (in the browser panel header) is off by default and reveals the machinery this
+project is really about: manual **Choose** / **Execute** stepping, action confidence, target overlays, and
+the structured inspector showing the numbered element table and the operation/target probabilities Jev
+returned.
+
+## Sources, and the walls they put up
+
+Marketplaces defend themselves against automation, and results differ by site. Hearth **detects** a wall,
+labels it, keeps any cards it already has, and moves on. It will not try to solve a CAPTCHA or a
+verification challenge for you.
+
+Measured on one machine, same day:
+
+| Source | Wall | What we saw |
+| --- | --- | --- |
+| **Craigslist** | none | 24 cards on the first page |
+| **Facebook Marketplace** | none | works signed out; a signed-in profile collects more |
+| **Redfin** | AWS WAF (`Are You a Robot?`) | cleared by an export containing `aws-waf-token` |
+| **Zillow** | PerimeterX (`Press & Hold`) | needs `_px3`; got in once, then blocked again |
+
+Walls are scored per **IP and session**, not per site: a headed Chrome loaded Zillow while an identical
+headless one was refused, and the result flipped between runs. If a source keeps blocking:
+
+- Run the demo with the sources that work. The quickest three-source path is Craigslist + Facebook + Redfin.
+- For Redfin, load a cookie export that includes `aws-waf-token` (below).
+- For Zillow, `_px3` expires in roughly 30 minutes, and heavy automated traffic makes the block worse. A
+  different network is usually the only thing that reliably resets it.
+- If a wall does appear and you clear it by hand in the agent's Chrome window, press **Continue with this
+  source** to pick it back up.
+
+### Loading a signed-in session (optional)
+
+Exports are read from a path, stay outside this repository, and print counts, never values:
+
+```bash
+uv run python scripts/load_cookies.py ~/Downloads/cookies-redfin.json
+```
+
+Treat these files as live credentials; a Facebook `c_user`/`xs` pair is full account access. Rotate
+anything you have shared.
+
+## Configuration
+
+Everything lives in `.env` (see `.env.example`). Only the first one is required.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `TYPESAFE_API_KEY` | none | **Required.** Key for the model that chooses each action |
+| `TYPESAFE_MODEL` | `jev-latest` | Which Jev revision to ask |
+| `TEXT_MODEL_API_KEY` | none | Only needed for goals with no supplied field values |
+| `TEXT_MODEL_BASE_URL` | OpenRouter | Any OpenAI-compatible endpoint |
+| `TEXT_MODEL` | `inception/mercury-2.5` | Model that writes field text |
+| `TEXT_MODEL_REASONING` | `none` | Reasoning effort for the text helper |
+| `TYPESAFE_PRICE_PER_BTOK` | `42` | Flat rate, **per billion tokens**, for the spend estimate |
+| `TYPESAFE_PRICE_INPUT_PER_MTOK` / `_OUTPUT_PER_MTOK` | none | Split rates; take precedence if both set |
+| `BU_CDP_URL` | none | Chrome to drive, e.g. `http://127.0.0.1:9222` |
+| `TYPESAFE_DEMO_HOST` | `127.0.0.1` | Set `0.0.0.0` to accept connections from your network |
+| `TYPESAFE_DEMO_PORT` | `8766` | Port Hearth listens on |
+
+**About AI spend.** TypeSafe reports tokens, not dollars, so the counter converts the token total at your
+configured rate and always labels it an estimate: `$0.0024 · 57K tokens at $42 per 1B tokens · estimate`.
+If a provider ever reports an explicit USD cost, that is shown verbatim instead. Unknown cost shows as a
+dash, never `$0.00`.
+
+### Reach Hearth from another device
+
+The server binds to loopback by default. To open it from a phone or another machine on the same network:
+
+```bash
+TYPESAFE_DEMO_HOST=0.0.0.0 uv run jev      # then visit http://<this-machine-ip>:8766
+```
+
+**Be clear about what that exposes.** This port drives the Chrome profile the agent is using, including any
+signed-in sessions, and the per-run token is readable by anyone who can load `/`. What still holds: a
+mutation must carry that token *and* be same-origin, so a random web page you visit cannot drive the agent
+(verified: foreign `Origin` → 403, wrong token → 403, path traversal → 404). What does not: anyone on the
+network can read the token from `/` and then drive the agent. Use it on a network you trust. The agent's own
+Chrome debugging port stays loopback-only.
+
+## How Jev works
+
+**A browser agent with a dynamic, indexed action space.** Give it one goal;
+[TypeSafe's Jev](https://docs.typesafe.ai/introduction) picks an operation and an element. A small LLM
+writes text only when the operation is `TYPE_TEXT`.
+
+```
                       one TypeSafe request
                      ┌───────────────────────────┐
 page → element table → operation                 │
@@ -46,84 +252,42 @@ page → element table → operation                 │
                    small LLM → text → browser
 ```
 
-Target questions are speculative. If the operation is `CLICK`, only `click_target` can execute. Two decisions, **one network round trip**. Each target head contains only compatible elements. Native dropdown choices carry an observed element/option index.
+Every observation produces a fresh element table:
 
-There are no site-specific action scripts or prepared field strings in the policy. The Flights example supplies a goal and independently verifies the outcome. The screenshot renderer adds labels afterward; it does not drive the browser.
-
-## Try it
-
-```bash
-git clone https://github.com/browser-use/jev-ultrafast.git
-cd jev-ultrafast
-uv sync
-cp .env.example .env
-# Add TYPESAFE_API_KEY and TEXT_MODEL_API_KEY.
-uv run jev
+```text
+[1] button    Change ticket type · Round trip
+[2] combobox  Where from?        · San Francisco
+[3] combobox  Where to?          · empty
+[4] textbox   Departure          · empty
 ```
 
-Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. The inspector shows numbered elements, operation probabilities, target probabilities, and executed actions. **Choose next** pauses before execution.
+The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE` and `BLOCKED`,
+and only supported combinations are offered. Target questions are speculative: if the operation is `CLICK`,
+only `click_target` can execute. Two decisions, **one network round trip**.
 
-Chrome connects through [Browser Harness](https://github.com/browser-use/browser-harness), installed by `uv sync`. Run `uv run browser-harness --doctor` if it needs connecting. Allow remote debugging in Chrome when prompted.
+Model output never becomes selectors, coordinates, shell commands or executable JavaScript. Every executed
+target is resolved from an observed DOM node and re-checked for freshness and occlusion immediately before
+input. There are no per-site action scripts in the policy: the same generic policy drives all four
+marketplaces, and Craigslist, Zillow and Facebook look nothing alike.
 
-`TEXT_MODEL_API_KEY` is an OpenRouter key in the example configuration. The current demo uses `inception/mercury-2.5` with reasoning disabled. Gemini, GLM, and DeepSeek can also use the OpenAI-compatible text helper; configure the appropriate model, endpoint, and reasoning setting.
+## Project layout
 
-## Use the library
-
-```python
-from jev_ultrafast import Agent
-
-with Agent(
-    "https://www.google.com/travel/flights?hl=en",
-    "Find one-way flights from Zurich to London on September 20, 2026, "
-    "for one adult in economy. Stop when matching flight options are visible.",
-) as agent:
-    for state in agent.run():
-        print(state["elapsed_ms"], state["status"])
-```
-
-Run with `uv run --env-file .env python your_script.py`. The same policy can run a different task:
-
-```bash
-uv run --env-file .env python examples/run.py \
-  --url https://en.wikipedia.org/wiki/Main_Page \
-  --goal 'Find and open the Wikipedia article about Gödel’s incompleteness theorems.'
-```
-
-`uv run --env-file .env python examples/flights.py --keep-open` performs the flight search, checks the actual route/date/results, and saves its trace. It does not select or book a flight.
-
-## Why it moves
-
-- **One request per decision cycle.** Operation and target heads share the same observed state.
-- **No screenshots in the default agent loop.** Jev consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
-- **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes.
-- **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input.
-- **Wait for useful state.** After typing into a combobox, wait for visible suggestions, capped at 200 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
-- **Keep hidden tabs rendering.** Focus emulation prevents background animation throttling without switching Chrome's visible tab.
-- **Send visible text.** Offscreen article bodies and footers do not fill the model context.
-- **Reuse an interrupted text request.** A generated value survives a stale-page retry only if the entire text-helper input is unchanged.
-
-Every executed target is resolved from an observed node. The executor rechecks page freshness and click occlusion. Model output never becomes selectors, coordinates, shell commands, or executable JavaScript. Text-helper output must parse as a small JSON object before typing.
-
-## Small enough to read
-
-| File | Job |
+| Path | Job |
 | --- | --- |
-| [agent.py](jev_ultrafast/agent.py) | The complete loop and text-helper handoff |
-| [snapshot.js](jev_ultrafast/snapshot.js) | Atomic DOM snapshot, indexed controls, freshness guards |
-| [browser.py](jev_ultrafast/browser.py) | Browser connection, current geometry, execution |
-| [model.py](jev_ultrafast/model.py) | Dynamic operation/target heads and text generation |
-| [questions.py](jev_ultrafast/questions.py) | Model instructions |
-| [demo.py](jev_ultrafast/demo.py) | Local inspector |
+| `jev_ultrafast/agent.py` | The decision/execution loop and text-helper handoff |
+| `jev_ultrafast/model.py` | Operation/target heads and supplied-text choices |
+| `jev_ultrafast/questions.py` | The browsing policy: the only place behaviour is described |
+| `jev_ultrafast/browser.py` | Chrome connection, geometry, execution |
+| `jev_ultrafast/snapshot.js` | Atomic DOM snapshot, indexed controls, listing-card and detail extraction |
+| `jev_ultrafast/demo.py` | Local server and source start URLs |
+| `jev_ultrafast/static/app.js` | The UI: source sequence, tabs, voice, report |
+| `jev_ultrafast/static/report.js` | Filtering, dedup, ranking, source balancing (DOM-free) |
+| `jev_ultrafast/static/query.js` | Turns a spoken/typed request into sidebar filters (DOM-free) |
+| `jev_ultrafast/static/telemetry.js` | Cost, duration and action wording (DOM-free) |
+| `tests/` | Offline contracts: policy, guard freshness, filter/parse/telemetry logic |
 
-## Evidence and limits
-
-The current video is a **7,073 ms** Google Flights run. Timing starts after initial page observation and includes model calls, generated text, browser work, stale decisions, and loading waits. A fresh independent check verifies the one-way setting, Zürich, London, September 20, 2026, and visible flight options. The video plays at 1×, with no opening hold and a 0.5-second final hold.
-
-In six alternating runs with identical models and settings, both versions passed **3/3**. Median task time went from **9.450 s → 7.092 s**, a **25% reduction**; median browser protocol calls went from **1,092 → 101**. This is three repeats of one task on one browser profile, not a general reliability benchmark.
-
-The same policy opened the requested Wikipedia article in **2.798 s** and passed a local hotel search/filter task in **1.896 s**. Runs, failures, source hashes, and measurement boundaries are in [performance.md](docs/performance.md).
-
-A `DONE` choice still requires independent outcome verification. The DOM reader handles common HTML and ARIA controls, not the full accessible-name specification. Shadow roots, frames, canvas, uploads, pop-up tabs, nested scrolling, and arbitrary keyboard widgets remain outside this MVP. Owned tabs share the existing Chrome profile.
+`PROGRESS.md` carries the engineering handoff: verified runs, the source-by-source findings behind the
+table above, and the UX evaluation this UI was rebuilt against.
 
 ## Development
 
@@ -131,12 +295,35 @@ A `DONE` choice still requires independent outcome verification. The DOM reader 
 uv run ruff check .
 uv run pytest
 node --check jev_ultrafast/static/app.js
+node --check jev_ultrafast/static/report.js
+node --check jev_ultrafast/static/query.js
+node --check jev_ultrafast/static/telemetry.js
 node --check jev_ultrafast/snapshot.js
+node --test tests/report.test.js
+node --test tests/query.test.js
+node --test tests/telemetry.test.js
 uv build
 ```
 
-Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
+Tests are offline and call no paid APIs. The Node suites cover the pure modules: report filtering, the
+request parser, and telemetry formatting. `uv run python scripts/check_guards.py` exercises real controls in
+a local browser without model calls. `scripts/smoke.py` and `examples/` make paid calls by design.
+
+## Security and limits
+
+- Everything runs on your machine. Keys stay server-side and `.env` is gitignored.
+- Hearth only reads pages and clicks controls it observed. It never enters credentials, creates accounts,
+  messages sellers, saves listings or pays for anything.
+- It refuses to solve verification challenges. A wall is reported, not defeated.
+- Candidates are not verified homes: Hearth reports what a listing's own page states, and availability,
+  accuracy and recency still need the original listing.
+- Partial runs happen: a source may stop early on a wall, a rate limit or a step budget, and Hearth says so
+  instead of presenting it as a finished search.
+- The extractor reads what is rendered, so a source with lazy loading yields more cards the further it
+  scrolls. Shadow roots, frames, canvas, uploads and nested scrolling are outside this MVP.
 
 ---
 
-[Browser Use](https://github.com/browser-use/browser-use) · [Browser Harness](https://github.com/browser-use/browser-harness) · [TypeSafe speculative fan-out](https://docs.typesafe.ai/patterns/fan-out)
+Hearth is built on **[Jev Ultrafast](https://github.com/browser-use/jev-ultrafast)** by
+[Browser Use](https://github.com/browser-use/browser-use), with decisions from
+[TypeSafe](https://docs.typesafe.ai/patterns/fan-out). MIT licensed. See [LICENSE](LICENSE).

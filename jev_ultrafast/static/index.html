@@ -4,141 +4,245 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="demo-token" content="__TOKEN__" />
-    <title>Jev Ultrafast · Browser Use</title>
-    <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+    <title>Hearth · Search with Jev</title>
+    <meta
+      name="description"
+      content="Hearth searches Craigslist, Facebook Marketplace, Redfin, and Zillow at once and returns one rental shortlist. Jev drives a real browser, applies your filters, and reports matches with photos, prices, and direct links. It never messages sellers or starts a transaction."
+    />
+    <meta name="application-name" content="Hearth" />
+    <meta name="theme-color" content="#244d3d" />
+    <meta name="color-scheme" content="light" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Hearth" />
+    <meta property="og:title" content="Hearth · Autonomous rental search" />
+    <meta
+      property="og:description"
+      content="One search across Craigslist, Facebook Marketplace, Redfin, and Zillow, with a combined shortlist of matching rentals. Runs locally in your own Chrome."
+    />
+    <meta property="og:image" content="/backdrop.jpg" />
+    <meta property="og:image:alt" content="Illustration of a light San Francisco residential street" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Hearth · Autonomous rental search" />
+    <meta
+      name="twitter:description"
+      content="One search across Craigslist, Facebook Marketplace, Redfin, and Zillow, with a combined shortlist of matching rentals. Runs locally in your own Chrome."
+    />
+    <meta name="twitter:image" content="/backdrop.jpg" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <header>
-      <a href="/" aria-label="Homepage" class="brand"
-        >browser<span>use</span> <i>×</i> TypeSafe</a
-      >
-      <div class="local"><span class="dot"></span> Jev Ultrafast</div>
-    </header>
-    <main>
-      <section class="intro">
-        <div>
-          <p class="eyebrow">A BROWSER THAT CHOOSES</p>
-          <h1>Every page is a set of possibilities.</h1>
-          <p>
-            Jev picks the next action. A small language model handles the words.
-            <a href="/demo.mp4" target="_blank" rel="noopener">Watch the real Google Flights run ↗</a>
-          </p>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <div class="app-shell">
+      <header class="topbar">
+        <a href="/" class="brand" aria-label="Hearth home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i></span>
+          <span>hearth</span>
+        </a>
+        <div class="top-search-wrap">
+          <form id="search-form" class="top-search">
+            <span class="search-icon" aria-hidden="true"></span>
+            <input id="goal" name="goal" type="text" autocomplete="off" placeholder="Say a whole search — “studio in Oakland under $2,500, near BART”" aria-label="Describe your search: location, budget, home type, or any preference" />
+            <button id="voice" class="voice" type="button" aria-label="Search by voice" title="Search by voice">
+              <svg class="mic-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none">
+                <rect x="8.25" y="3" width="7.5" height="12" rx="3.75"></rect>
+                <path d="M5.75 11.5v.75a6.25 6.25 0 0 0 12.5 0v-.75M12 18.5V22M8.75 22h6.5"></path>
+              </svg>
+              <span class="voice-label">Speak</span>
+            </button>
+            <button id="search-submit" class="search-submit" type="submit" aria-label="Apply search prompt"><span aria-hidden="true">↗</span></button>
+          </form>
+          <p class="voice-hint" id="voice-hint" role="status"></p>
         </div>
-        <div class="model-tag">jev-latest <span>+ text helper</span></div>
+        <div class="jev-pill" id="jev-pill"><span class="pulse"></span><span id="jev-status">Checking Jev…</span></div>
+      </header>
+
+      <section class="search-intro">
+        <p class="kicker">ONE SEARCH. MORE POSSIBILITIES.</p>
+        <h1>Your next home is out there. <em>Can AI find it?</em></h1>
+        <p>Set your budget. Watch Jev search. Meet your shortlist.</p>
       </section>
-      <form id="task-form">
-        <div class="task-label">
-          <label for="goal">Give it a task</label
-          ><select id="scenario" name="scenario" aria-label="Demo scenario">
-            <option value="flights">Google Flights · real web</option>
-            <option value="travel">Travel planner · fixture</option>
-            <option value="research">Reading room · fixture</option>
-          </select>
-        </div>
-        <div class="task-row">
-          <textarea id="goal" name="goal" rows="5">
-Find one-way flights from Zurich to London on September 20, 2026, for one adult in economy. Stop when matching flight options are visible. Do not select or book a flight.</textarea
-          ><button type="submit" id="start" class="primary">
-            Start demo <span>↗</span>
-          </button>
-        </div>
-      </form>
-      <div class="toolbar">
-        <div class="status">
-          <span class="dot" id="status-dot"></span
-          ><span id="status" role="status">Ready to explore</span>
-        </div>
-        <div class="controls"><label class="overlay-control"><input name="pace" id="pace" type="checkbox"> Slow motion</label>
-          <label class="overlay-control"
-            ><input name="overlays" id="overlays" type="checkbox" checked />
-            Targets</label
-          ><button type="button" id="choose" disabled>Choose next</button
-          ><button type="button" id="execute" disabled>Execute choice</button
-          ><button type="button" id="auto" disabled>Run automatically</button
-          ><button type="button" id="stop" hidden>Pause</button>
-        </div>
-      </div>
-      <div id="error" role="alert" hidden></div>
-      <section class="workspace">
-        <div class="browser-panel">
-          <div class="browser-bar">
-            <div class="traffic"><b></b><b></b><b></b></div>
-            <span id="url">Local demo browser</span
-            ><span class="live">LIVE</span>
+      <main>
+        <aside class="filter-panel">
+          <div class="filter-heading">
+            <p class="kicker">YOUR SEARCH</p>
+            <p class="filter-hint">Set the boundaries. Jev handles the browsing.</p>
           </div>
-          <div class="viewport" id="viewport">
-            <div class="empty" id="empty">
-              <p class="empty-symbol">[ ↗ ]</p>
-              <h2>Watch the decision happen.</h2>
-              <p>
-                Start a task to see a real browser, its available<br />actions,
-                and the model's choice.
-              </p>
+
+          <form id="task-form" class="filters">
+            <input id="scenario" name="scenario" type="hidden" value="all" />
+            <span class="field-label source-label">Search everywhere <small id="source-count">4 selected</small></span>
+            <div class="source-grid" role="group" aria-label="Listing sources">
+              <label><input type="checkbox" name="source" value="craigslist" checked /><span>Craigslist</span></label>
+              <label><input type="checkbox" name="source" value="marketplace" checked /><span>Facebook</span></label>
+              <label><input type="checkbox" name="source" value="redfin" checked /><span>Redfin</span></label>
+              <label><input type="checkbox" name="source" value="zillow" checked /><span>Zillow</span></label>
             </div>
-            <img
-              id="screenshot"
-              alt="Live screenshot of the controlled browser"
-              hidden
-            />
-            <div id="targets"></div>
-          </div>
-          <div class="browser-footer">
-            <span id="page-title">Isolated demo tab</span
-            ><span>AX tree → typed actions → CDP</span>
-          </div>
-        </div>
-        <aside>
-          <div class="aside-header">
-            <div>
-              <p class="eyebrow">NEXT ACTION</p>
-              <h2 id="choice-title">Waiting for a page</h2>
+
+            <label class="field-label" for="location">Where</label>
+            <div class="field location-field">
+              <span class="pin" aria-hidden="true"></span>
+              <input id="location" name="location" type="text" value="San Francisco, CA" />
             </div>
-            <span id="action-count">0 options</span>
-          </div>
-          <div id="plan" class="plan"></div>
-          <div class="metrics">
-            <div><span>Decision time</span><strong id="latency">—</strong></div>
-            <div>
-              <span>Target confidence</span><strong id="confidence">—</strong>
+
+            <div class="field-group">
+              <label class="field-label" for="min-price">Monthly budget</label>
+              <div class="price-grid">
+                <label class="field price-field"><span>Min</span><span class="currency">$</span><input id="min-price" name="min-price" inputmode="numeric" value="0" /></label>
+                <span class="price-dash">—</span>
+                <label class="field price-field"><span>Max</span><span class="currency">$</span><input id="max-price" name="max-price" inputmode="numeric" value="2,000" /></label>
+              </div>
             </div>
-            <div>
-              <span>Operation</span
-              ><strong id="completion">—</strong>
+
+            <div class="field-group">
+              <span class="field-label">Home type</span>
+              <div class="segment" role="group" aria-label="Home type">
+                <label><input type="radio" name="home-type" value="flat" checked /><span>Apartment</span></label>
+                <label><input type="radio" name="home-type" value="studio" /><span>Studio</span></label>
+                <label><input type="radio" name="home-type" value="house" /><span>House</span></label>
+              </div>
             </div>
-          </div>
-          <div id="operation-choices" class="operation-choices"></div>
-          <p class="distribution-label">
-            Indexed elements
-            <span id="ranking-note">Choose next to rank</span>
-          </p>
-          <div id="choices" class="choices">
-            <p class="muted">Available actions will appear here.</p>
-          </div>
-          <p class="aside-note">
-            Operation and target are separate choices in one request.<br />Text is generated only for TYPE_TEXT.
-          </p>
+
+            <label class="field-label" for="date-listed">Listed within</label>
+            <div class="field select-field">
+              <select id="date-listed" name="date-listed">
+                <option value="1">Last 24 hours</option>
+                <option value="7">Last 7 days</option>
+                <option value="30" selected>Last four weeks</option>
+              </select>
+              <span aria-hidden="true">⌄</span>
+            </div>
+
+            <div class="filter-note">
+              <span class="spark" aria-hidden="true">✦</span>
+              <p><strong>Every match has a reason</strong>Rooms and known mismatches are excluded. Missing facts stay marked for review.</p>
+            </div>
+
+            <div class="setup-warning" id="setup-warning" hidden>
+              <span aria-hidden="true">!</span>
+              <p><strong>Setup needed</strong><span id="setup-message">Add server-side API keys to continue.</span></p>
+            </div>
+
+            <button type="submit" id="start" class="start-button"><span>Start searching</span><span aria-hidden="true">→</span></button>
+          </form>
+
+          <div class="privacy"><span>⌁</span> Runs in your local Chrome profile</div>
         </aside>
-      </section>
-      <section class="trace">
-        <div class="trace-heading">
-          <h2>Decision trail <span id="step-count">0 actions</span></h2>
-          <button type="button" id="download" disabled>Export trace ↓</button>
-        </div>
-        <div id="history">
-          <p class="muted">Each executed action leaves an observed result.</p>
-        </div>
-      </section>
-      <details>
-        <summary>What the model sees</summary>
-        <pre id="model-state">
-Start a demo to inspect its structured state.</pre>
-      </details>
-      <footer>
-        <span>Browser Use × TypeSafe · Experimental baseline</span
-        ><span id="helper">Text helper loading</span>
-      </footer>
-    </main>
+
+        <section class="browser-workspace">
+          <div id="error" class="error" role="alert" hidden></div>
+          <div class="run-summary" id="run-summary" hidden>
+            <div id="search-chips" class="search-chips"></div>
+            <span class="run-status" id="run-status" role="status"></span>
+            <button id="completion-jump" type="button">Results ↓</button>
+            <button id="edit-search" type="button" aria-expanded="false">Edit</button>
+            <button id="new-search" type="button">New search</button>
+            <button id="retry-source" type="button" title="Complete the site's human check in the browser window, then press this" hidden>Continue with this source</button>
+            <div class="workspace-tools">
+              <label class="toggle" title="Show manual stepping, action confidence and the structured inspector"><input id="developer" type="checkbox" /><span></span> Developer</label>
+              <label class="toggle"><input id="overlays" type="checkbox" /><span></span> Show targets</label>
+              <button type="button" id="download" class="icon-button" disabled title="Export trace">↓</button>
+            </div>
+          </div>
+
+          <div class="live-layout">
+          <div class="browser-frame">
+            <div class="source-tabs" id="source-tabs" aria-label="Search browser tabs" hidden></div>
+            <div class="browser-bar">
+              <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+              <div class="address"><span class="lock" aria-hidden="true"></span><span id="url">Search across 4 rental marketplaces</span></div>
+              <span class="live-badge offline" id="browser-live"><i></i><span>WAITING</span></span>
+            </div>
+            <div class="viewport" id="viewport">
+              <div class="empty" id="empty">
+                <div class="empty-orbit"><span>J</span><i></i><i></i><i></i></div>
+                <h3>Your search starts here.</h3>
+                <p>Jev will read the page, choose a safe action,<br />and navigate while you watch.</p>
+                <span class="empty-caption">Ready when you are</span>
+              </div>
+              <img id="screenshot" alt="Live screenshot of the browser controlled by Jev" hidden />
+              <div id="targets" hidden></div>
+            </div>
+
+            <div class="action-dock">
+              <div class="action-state">
+                <span class="action-orb" id="status-dot"><i></i></span>
+                <div><span class="action-eyebrow" id="activity-mode">JEV IS READY</span><strong id="status" role="status">Ready to begin</strong></div>
+              </div>
+              <div class="action-detail">
+                <span id="completion">READY</span><strong id="choice-title">Waiting for your search</strong><span id="confidence" class="dev-only">— confidence</span>
+              </div>
+              <div class="dock-controls">
+                <span id="step-count">0 actions</span>
+                <button type="button" id="choose" class="dev-only" disabled title="Choose next action">Choose</button>
+                <button type="button" id="execute" class="dev-only" disabled title="Execute selected action">Execute</button>
+                <button type="button" id="auto" disabled>Resume</button>
+                <button type="button" id="stop" hidden>Stop</button>
+              </div>
+            </div>
+          </div>
+
+          <aside class="side-column">
+            <section class="live-metrics" aria-label="Search totals">
+              <div><strong id="metric-pages">0</strong><span>Pages visited</span><small id="metric-sources">Across your selected sources</small></div>
+              <div><strong id="metric-actions">0</strong><span>Browser actions</span><small id="metric-calls">0 clicks · 0 model calls</small></div>
+              <div><strong id="metric-time">0.0 s</strong><span>Elapsed time</span><small>Including page loading</small></div>
+              <div><strong id="metric-cost">—</strong><span id="metric-cost-label">AI spend · USD</span><small id="metric-cost-note">No model calls yet</small></div>
+            </section>
+            <div class="activity-rail">
+              <div class="rail-heading"><div><p class="kicker">BEHIND THE SEARCH</p><h3>Watch it unfold.</h3></div><span id="activity-count">0 events</span></div>
+              <div class="rail-tabs" role="group" aria-label="Activity view"><button type="button" class="selected" id="tab-activity" aria-pressed="true">Activity</button><button type="button" id="tab-filtering" aria-pressed="false">Filtering <span id="filter-count">0</span></button></div>
+              <div id="history" class="event-stream" tabindex="0" aria-label="Completed actions"><p class="stream-empty">One search. Every step, in the open.</p></div>
+              <div id="filter-history" class="event-stream" tabindex="0" aria-label="Listing checks" hidden></div>
+              <div class="filter-totals" id="filter-totals">Price, city, home type and recency checked against each listing.</div>
+            </div>
+          </aside>
+          </div>
+
+          <section id="first-match" class="first-match" role="status" hidden></section>
+          <section id="finale" class="finale" hidden>
+            <div class="report-head"><div><p class="kicker" id="finale-eyebrow">YOUR SHORTLIST</p><h3 id="finale-title">A few places to start picturing yourself.</h3></div><span id="finale-status"></span></div>
+            <p id="finale-context"></p>
+            <div class="shortlist-grid" id="shortlist-grid"></div>
+          </section>
+
+          <section class="report" id="report" hidden>
+            <div class="report-head">
+              <div><p class="kicker">MATCH REPORT</p><h3 id="report-title">Homes worth a closer look</h3></div>
+              <span id="report-count">0 listings</span>
+            </div>
+            <div class="report-badges" id="report-badges"></div>
+            <p class="report-context" id="report-context"></p>
+            <div class="report-grid" id="report-grid"></div>
+          </section>
+
+          <details class="technical">
+            <summary>Inspect decisions and structured state <span id="action-count"></span></summary>
+            <div class="now-card"><div class="now-head"><span>Decision signal (not listing confidence)</span><span id="latency">—</span></div><div id="operation-choices" class="operation-choices"></div></div>
+            <div id="plan" class="plan"></div>
+            <div id="choices" class="choices"></div>
+            <pre id="model-state">Start a search to inspect its structured state.</pre>
+          </details>
+          <span id="ranking-note" hidden>Unranked</span><span id="page-title" hidden>Browser</span>
+          <input id="pace" type="checkbox" hidden /><span id="helper" hidden>Text helper</span>
+        </section>
+      </main>
+    </div>
     <script type="module" src="/app.js"></script>
+    <script>
+      window.setTimeout(() => {
+        if (!window.hearthReady) {
+          document.getElementById('jev-status').textContent = 'Could not start';
+          const error = document.getElementById('error');
+          error.textContent = 'Hearth could not connect. Check the local server, then refresh this page.';
+          error.hidden = false;
+        }
+      }, 8000);
+    </script>
   </body>
 </html>
