@@ -85,6 +85,21 @@ check, a sign-in wall or a rate limit. Hearth reports it on the source tab, keep
 collected, and moves on to the next source. It will not solve a CAPTCHA for you. If you clear a check by
 hand in the agent's Chrome window, press **Continue with this source** to resume.
 
+### Signing in to a marketplace (optional)
+
+Craigslist works straight away. Facebook Marketplace, Redfin and Zillow often work better with a signed-in
+session, and some of them show a bot check without one.
+
+Sign in as usual in your own browser, export those cookies, and load them into the Chrome Hearth drives:
+
+```bash
+uv run python scripts/load_cookies.py ~/Downloads/cookies.json
+```
+
+The cookies are written into that Chrome's profile, so they survive restarts. They are live credentials:
+keep the export outside this repository (`.gitignore` already blocks `cookies*.json`), and rotate anything
+you have shared.
+
 ## Good to know
 
 - Everything runs on your machine. Your API key stays in `.env`, which is never committed.
